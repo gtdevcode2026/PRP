@@ -75,20 +75,6 @@ REGISTRY: list[ScriptEntry] = [
         patch_abs=True,
     ),
     ScriptEntry(
-        "s1a", "Slide 12 · 1st — Suppliers",
-        "Assessment Status Overview (Active/Deprioritized/Duplicate)",
-        "Slide 12 1st daigram Automation/automation.py",
-        "TPRM Web-Portal Export",
-        "Single status-overview chart.",
-    ),
-    ScriptEntry(
-        "s1b", "Slide 12 · 1st — Suppliers",
-        "Status Overview + Active-by-Zone (two charts)",
-        "Slide 12 1st daigram Automation/automation2.py",
-        "TPRM Web-Portal Export",
-        "Adds a per-zone table and a second chart.",
-    ),
-    ScriptEntry(
         "s1c", "Slide 12 · 1st — Suppliers",
         "Status Overview + Active-by-Zone (combines ACTIVE/Active)",
         "Slide 12 1st daigram Automation/automation3.py",
@@ -108,27 +94,6 @@ REGISTRY: list[ScriptEntry] = [
         "Slide 12 2nd daigram Automation/automation2.py",
         "OneTrust Assessment",
         "Most complete 2nd-diagram variant: adds an overdue-by-zone report.",
-    ),
-    ScriptEntry(
-        "s3a", "Slide 12 · 3rd — Risks",
-        "Zone-wise Total vs Open Risks (dark stacked chart)",
-        "Slide 12 3rd daigram Automation/automation.py",
-        "OneTrust - Risk Export",
-        "Total = Eval/Identified/Treatment/Monitoring; Open = first three.",
-    ),
-    ScriptEntry(
-        "s3b", "Slide 12 · 3rd — Risks",
-        "Zone Summary + Open vs Overdue (uses Aging buckets)",
-        "Slide 12 3rd daigram Automation/automation2.py",
-        "OneTrust - Risk Export",
-        "Adds an Open-vs-Overdue chart from the Aging column text buckets.",
-    ),
-    ScriptEntry(
-        "s3c", "Slide 12 · 3rd — Risks",
-        "Formatted Zone Summary + Open vs Overdue (styled headers)",
-        "Slide 12 3rd daigram Automation/automation3.py",
-        "OneTrust - Risk Export",
-        "Same as above with full cell formatting.",
     ),
     ScriptEntry(
         "s3d", "Slide 12 · 3rd — Risks",
@@ -244,10 +209,6 @@ _NAN_STRINGS = {"nan", "none", "nat", ""}
 
 
 def _trim_sparse_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop rows that are mostly empty — catches blank separators and section-header
-    rows that appear when a sheet contains multiple logical tables (e.g. a data table
-    followed by a 'Calculation used for chart' section written by xlsxwriter).
-    Rows where at least half the columns carry a real value are kept."""
     if df.empty:
         return df
     threshold = max(2, len(df.columns) // 2)
@@ -260,6 +221,24 @@ def _trim_sparse_rows(df: pd.DataFrame) -> pd.DataFrame:
 
     mask = df.apply(_filled, axis=1) >= threshold
     return df[mask].reset_index(drop=True)
+
+
+def _trim_sparse_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop columns that are mostly empty — removes side-by-side tables that pandas
+    reads as extra columns when a sheet has multiple logical tables placed next to
+    each other (e.g. a pivot at col 0 and a summary table starting at col 8)."""
+    if df.empty:
+        return df
+    threshold = max(2, len(df) // 2)
+
+    def _filled(col):
+        return sum(
+            1 for v in col
+            if not pd.isna(v) and str(v).strip().lower() not in _NAN_STRINGS
+        )
+
+    mask = df.apply(_filled, axis=0) >= threshold
+    return df.loc[:, mask]
 
 
 def _clean_for_tsv(df: pd.DataFrame) -> pd.DataFrame:
@@ -554,7 +533,7 @@ def _header_html() -> str:
     </span>
     <span style="font-family:Arial,sans-serif;font-size:11px;color:#d4a800;background:#1a1a1a;
       border:1px solid #3a3000;border-radius:6px;padding:4px 10px;font-weight:700;">
-      13 Reports
+      8 Reports
     </span>
   </div>
 </div>"""
@@ -569,7 +548,7 @@ def _kpi_row_html(result: "RunResult | None" = None) -> str:
         else '<span class="badge badge-gray">&#8212;</span>'
     )
     cards = [
-        ("Total Reports",  "13",          "13 automation scripts"),
+        ("Total Reports",  "8",           "8 automation scripts"),
         ("Script Groups",  "7",           "Daigram 1/2/3 &middot; Slide 12"),
         ("Input Sheets",   "3",           "TPRM &middot; OneTrust &middot; Risk"),
         ("Output Files",   str(n_outputs) if result else "&mdash;", "From last run"),
@@ -732,6 +711,7 @@ def render_results(entry: ScriptEntry, result: RunResult, fmt: str) -> None:
     for fname, sheets in result.tables.items():
         for sheet_name, df in sheets.items():
             df = _trim_sparse_rows(df)
+            df = _trim_sparse_cols(df)
             st.markdown(f"""
 <div class="section-card" style="margin-bottom:14px;">
   <div class="section-header">
